@@ -48,11 +48,14 @@ jobs:
           echo "Fichiers natifs injectés :"
           ls -l "$PKG_DIR"
 
-      - name: Ajouter la permission SET_ALARM au manifeste
+      - name: Ajouter permission et visibilité Horloge au manifeste
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
           if ! grep -q "com.android.alarm.permission.SET_ALARM" "$MANIFEST"; then
             sed -i 's#<application#<uses-permission android:name="com.android.alarm.permission.SET_ALARM" />\n    <application#' "$MANIFEST"
+          fi
+          if ! grep -q "<queries>" "$MANIFEST"; then
+            sed -i 's#<application#<queries>\n        <intent><action android:name="android.intent.action.SET_TIMER" /></intent>\n        <intent><action android:name="android.intent.action.SET_ALARM" /></intent>\n        <package android:name="com.google.android.deskclock" />\n    </queries>\n    <application#' "$MANIFEST"
           fi
           echo "----- Manifeste -----"
           cat "$MANIFEST"
