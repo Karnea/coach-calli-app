@@ -1,0 +1,126 @@
+name: Build Coach Calli APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compiler l'APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Configurer le SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: Installer les dépendances Capacitor
+        run: npm install
+
+      - name: Générer le projet Android
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Injecter le pont natif (plugin + MainActivity)
+        run: |
+          PKG_DIR=android/app/src/main/java/com/karnea/coachcalli
+          mkdir -p "$PKG_DIR"
+          rm -f "$PKG_DIR/MainActivity.java"
+          cp android-src/CoachCalliTimerPlugin.kt "$PKG_DIR/CoachCalliTimerPlugin.kt"
+          cp android-src/MainActivity.kt "$PKG_DIR/MainActivity.kt"
+
+      - name: Ajouter permission et visibilité Horloge au manifeste
+        run: |
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          if ! grep -q "com.android.alarm.permission.SET_ALARM" "$MANIFEST"; then
+            sed -i 's#<application#<uses-permission android:name="com.android.alarm.permission.SET_ALARM" />\n    <application#' "$MANIFEST"
+          fi
+          if ! grep -q "<queries>" "$MANIFEST"; then
+            sed -i 's#<application#<queries>\n        <intent><action android:name="android.intent.action.SET_TIMER" /></intent>\n        <intent><action android:name="android.intent.action.SET_ALARM" /></intent>\n        <package android:name="com.google.android.deskclock" />\n    </queries>\n    <application#' "$MANIFEST"
+          fi
+
+      - name: Activer Kotlin dans Gradle
+        run: |
+          APP_GRADLE=android/app/build.gradle
+          if ! grep -q "kotlin-android" "$APP_GRADLE"; then
+            sed -i "s/apply plugin: 'com.android.application'/apply plugin: 'com.android.application'\napply plugin: 'kotlin-android'/" "$APP_GRADLE"
+          fi
+          if ! grep -q "kotlin-stdlib" "$APP_GRADLE"; then
+            sed -i "s/dependencies {/dependencies {\n    implementation \"org.jetbrains.kotlin:kotlin-stdlib:1.9.25\"/" "$APP_GRADLE"
+          fi
+          ROOT_GRADLE=android/build.gradle
+          if ! grep -q "kotlin-gradle-plugin" "$ROOT_GRADLE"; then
+            sed -i "s#classpath 'com.android.tools.build:gradle.*#&\n        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25'#" "$ROOT_GRADLE"
+          fi
+
+      - name: Installer google-services.json (depuis le secret)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON" ]; then
+            echo "ERREUR : secret GOOGLE_SERVICES_JSON vide."; exit 1
+          fi
+          echo "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+
+      - name: Installer le keystore (depuis le secret)
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "ERREUR : secret KEYSTORE_B64 vide."; exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > android/app/coach-calli.keystore
+
+      - name: Configurer la signature debug
+        run: python3 android-src/configure-signing.py android/app/build.gradle
+
+      - name: Configurer Google Services et Firebase Auth
+        run: |
+          ROOT_GRADLE=android/build.gradle
+          APP_GRADLE=android/app/build.gradle
+          VARS=android/variables.gradle
+          if ! grep -q "com.google.gms:google-services" "$ROOT_GRADLE"; then
+            sed -i "s#classpath 'com.android.tools.build:gradle.*#&\n        classpath 'com.google.gms:google-services:4.4.2'#" "$ROOT_GRADLE"
+          fi
+          if ! grep -q "com.google.gms.google-services" "$APP_GRADLE"; then
+            echo "" >> "$APP_GRADLE"
+            echo "apply plugin: 'com.google.gms.google-services'" >> "$APP_GRADLE"
+          fi
+          if ! grep -q "rgcfaIncludeGoogle" "$VARS"; then
+            sed -i "s/ext {/ext {\n    rgcfaIncludeGoogle = true\n    androidxCredentialsVersion = '1.3.0'/" "$VARS"
+          fi
+
+      - name: Rendre gradlew exécutable
+        run: chmod +x android/gradlew
+
+      - name: Compiler l'APK debug
+        run: |
+          cd android
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Renommer l'APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk coach-calli.apk
+
+      - name: Publier l'APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: coach-calli-apk
+          path: coach-calli.apk
+          retention-days: 30
