@@ -1,5 +1,6 @@
 package com.karnea.coachcalli
 
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.provider.AlarmClock
 import com.getcapacitor.Plugin
@@ -7,11 +8,6 @@ import com.getcapacitor.PluginCall
 import com.getcapacitor.PluginMethod
 import com.getcapacitor.annotation.CapacitorPlugin
 
-/**
- * Pont natif : expose CoachCalliTimer au JavaScript de l'app web.
- * Depuis du code natif, lancer l'Horloge est un simple appel système,
- * sans les restrictions que Chrome impose à une PWA.
- */
 @CapacitorPlugin(name = "CoachCalliTimer")
 class CoachCalliTimerPlugin : Plugin() {
 
@@ -21,37 +17,42 @@ class CoachCalliTimerPlugin : Plugin() {
         val message = call.getString("message") ?: "Repos Coach Calli"
 
         if (seconds <= 0) {
-            call.reject("Durée invalide")
+            call.reject("Duree invalide")
             return
         }
 
+        // 1) Tentative directe : minuteur SET_TIMER (implicite, sans package).
+        val timerIntent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
+            putExtra(AlarmClock.EXTRA_LENGTH, seconds)
+            putExtra(AlarmClock.EXTRA_MESSAGE, message)
+            putExtra(AlarmClock.EXTRA_SKIP_UI, false)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         try {
-            val intent = Intent(AlarmClock.ACTION_SET_TIMER).apply {
-                putExtra(AlarmClock.EXTRA_LENGTH, seconds)
-                putExtra(AlarmClock.EXTRA_MESSAGE, message)
-                // false = on affiche l'app Horloge (chrono visible + sonnerie).
-                putExtra(AlarmClock.EXTRA_SKIP_UI, false)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+            context.startActivity(timerIntent)
+            call.resolve()
+            return
+        } catch (e: ActivityNotFoundException) {
+            // On continue vers le repli ci-dessous.
+        } catch (e: Exception) {
+            call.reject("Erreur au lancement du minuteur : " + e.message)
+            return
+        }
 
-            // Vérifie qu'une app peut gérer l'intent avant de lancer.
-            if (intent.resolveActivity(context.packageManager) != null) {
-                context.startActivity(intent)
+        // 2) Repli : ouvrir simplement l'app Horloge Google (sans pre-remplir).
+        try {
+            val launch = context.packageManager
+                .getLaunchIntentForPackage("com.google.android.deskclock")
+            if (launch != null) {
+                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(launch)
                 call.resolve()
-            } else {
-                // Aucune horloge ne gère SET_TIMER : on tente l'ouverture simple.
-                val fallback = context.packageManager
-                    .getLaunchIntentForPackage("com.google.android.deskclock")
-                if (fallback != null) {
-                    fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(fallback)
-                    call.resolve()
-                } else {
-                    call.reject("Aucune application Horloge trouvée")
-                }
+                return
             }
         } catch (e: Exception) {
-            call.reject("Impossible de lancer le minuteur : " + e.message)
+            // ignore
         }
+
+        call.reject("Impossible d'ouvrir l'application Horloge")
     }
 }
