@@ -46,6 +46,11 @@ jobs:
           cp android-src/CoachCalliTimerPlugin.kt "$PKG_DIR/CoachCalliTimerPlugin.kt"
           cp android-src/MainActivity.kt "$PKG_DIR/MainActivity.kt"
 
+      - name: Générer les icônes de l'app
+        run: |
+          pip install --quiet Pillow
+          python3 android-src/generate-icons.py resources/icon.png android/app/src/main/res
+          
       - name: Ajouter permission et visibilité Horloge au manifeste
         run: |
           MANIFEST=android/app/src/main/AndroidManifest.xml
