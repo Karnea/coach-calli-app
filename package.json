@@ -1,0 +1,20 @@
+{
+  "name": "coach-calli",
+  "version": "1.0.0",
+  "description": "Coach Calli - application de suivi callisthénie",
+  "private": true,
+  "scripts": {
+    "build": "echo 'Pas de build web : www/ est déjà prêt'",
+    "sync": "npx cap sync android",
+    "add:android": "npx cap add android"
+  },
+  "dependencies": {
+    "@capacitor-firebase/authentication": "^6.3.1",
+    "@capacitor/android": "~6.2.1",
+    "@capacitor/core": "~6.2.1",
+    "firebase": "^10.13.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "~6.2.1"
+  }
+}
