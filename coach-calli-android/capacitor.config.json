@@ -1,8 +1,0 @@
-{
-  "appId": "com.karnea.coachcalli",
-  "appName": "Coach Calli",
-  "webDir": "www",
-  "android": {
-    "allowMixedContent": true
-  }
-}
